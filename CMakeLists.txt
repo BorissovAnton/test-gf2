@@ -2,6 +2,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(GF2MatrixTest LANGUAGES CXX OBJCXX)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Set C++ and Objective-C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -58,6 +59,26 @@ if(APPLE AND METAL_SUPPORTED)
                               PROPERTIES LANGUAGE OBJCXX)
 endif()
 
+# --- FIX: COMPILE METAL SHADER ---
+if(APPLE AND METAL_SUPPORTED)
+  # This command compiles the .metal file into a .metallib file
+  add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/default.metallib
+    COMMAND
+      xcrun -sdk macosx metal ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply.metal -o
+      ${CMAKE_CURRENT_BINARY_DIR}/default.metallib
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply.metal
+    COMMENT "Compiling Metal shader gf2_multiply.metal")
+
+  # This target ensures the custom command is run
+  add_custom_target(MetalLibrary
+                    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/default.metallib)
+
+  # Make the main executable depend on the compiled Metal library
+  add_dependencies(gf2_test MetalLibrary)
+endif()
+# --- END FIX ---
+
 # Link libraries
 if(APPLE AND METAL_SUPPORTED)
   target_link_libraries(
@@ -74,12 +95,6 @@ endif()
 target_include_directories(gf2_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
                                             metal-cpp)
 
-# Copy Metal shaders to build directory
-foreach(metal_file ${METAL_SOURCES})
-  configure_file(${metal_file} ${CMAKE_CURRENT_BINARY_DIR}/${metal_file}
-                 COPYONLY)
-endforeach()
-
 # Create custom target for running tests
 add_custom_target(
   run_gf2_tests
@@ -91,5 +106,7 @@ add_custom_target(
 # Install target
 install(TARGETS gf2_test DESTINATION bin)
 
-# Install metal shaders
-install(FILES ${METAL_SOURCES} DESTINATION bin)
+# Install the compiled metal library, not the source
+if(APPLE AND METAL_SUPPORTED)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/default.metallib DESTINATION bin)
+endif()
