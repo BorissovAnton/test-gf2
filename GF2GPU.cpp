@@ -23,7 +23,8 @@ void GF2GPU::setupPipeline() {
     }
     
     // Load the kernel function
-    auto functionName = NS::String::string("gf2_multiply_aligned", NS::ASCIIStringEncoding);
+    // FIX: Load the correct kernel function name
+    auto functionName = NS::String::string("gf2_multiply_batch", NS::ASCIIStringEncoding);
     MTL::Function* kernelFunction = library->newFunction(functionName);
     if (!kernelFunction) {
         std::cerr << "Failed to load kernel function" << std::endl;
@@ -104,9 +105,9 @@ void GF2GPU::multiplyGPU(const GF2Matrix& a, const GF2Matrix& b, GF2Matrix& resu
     // Calculate thread group sizes
     MTL::Size threadsPerGroup = MTL::Size::Make(16, 16, 1);
     MTL::Size gridSize = MTL::Size::Make(
-        (a.rows() + 15) / 16 * 16,
-        (words_per_row_result + 15) / 16 * 16,
-        1
+        a.rows(),
+        words_per_row_result,
+        1 // Batch size is 1
     );
     
     encoder->dispatchThreads(gridSize, threadsPerGroup);
