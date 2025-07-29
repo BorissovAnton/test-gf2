@@ -214,7 +214,8 @@ bool GF2TestFramework::validateMultiplication(const GF2Matrix& a, const GF2Matri
         for (size_t j = 0; j < std::min<size_t>(10, b.cols()); j++) {
             bool expected = 0;
             for (size_t k = 0; k < a.cols(); k++) {
-                expected ^= (a.get(i, k) & b.get(k, j));
+                // expected ^= (a.get(i, k) & b.get(k, j));
+                expected ^= (static_cast<int>(a.get(i, k)) & static_cast<int>(b.get(k, j)));
             }
             if (expected != result.get(i, j)) {
                 return false;

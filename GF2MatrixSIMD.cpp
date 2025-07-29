@@ -1,4 +1,8 @@
 #include "GF2Matrix.hpp"
+
+// Only compile this file for x86_64 architecture
+#if defined(__x86_64__) || defined(_M_X64)
+
 #include <immintrin.h>
 #include <cstring>
 
@@ -113,4 +117,6 @@ private:
     }
 };
 #endif
+
+#endif // defined(__x86_64__) || defined(_M_X64)
 

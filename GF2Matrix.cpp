@@ -1,7 +1,7 @@
 #include "GF2Matrix.hpp"
 #include <iostream>
 #include <cstring>
-#include <immintrin.h>
+// #include <immintrin.h> 
 
 GF2Matrix::GF2Matrix(size_t rows, size_t cols) : m_rows(rows), m_cols(cols) {
     size_t totalBits = rows * cols;

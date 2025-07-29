@@ -1,3 +1,7 @@
+#define NS_PRIVATE_IMPLEMENTATION
+#define MTL_PRIVATE_IMPLEMENTATION
+#define CA_PRIVATE_IMPLEMENTATION
+
 #include "GF2TestFramework.hpp"
 #include <iostream>
 #include <string>

@@ -61,4 +61,4 @@ public:
     void runThroughputBenchmark();
     void runAccuracyBenchmark();
     void generateReport();
-
+};
