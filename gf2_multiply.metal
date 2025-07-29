@@ -24,24 +24,29 @@ inline uint get_bit(device const uint64_t* data, uint row, uint col, uint words_
     return (word >> bit_idx) & 1ULL;
 }
 
-inline void set_bit(device uint64_t* data, uint row, uint col, uint value, uint words_per_row) {
+// --- FIX STARTS HERE ---
+
+// FIX: Use the explicit fixed-width atomic type 'atomic_uint'.
+inline void set_bit_atomic(volatile device atomic_uint* data, uint row, uint col, uint words_per_row) {
     uint word_idx = col / 64;
     uint bit_idx = col % 64;
-    uint64_t mask = 1ULL << bit_idx;
-    uint idx = row * words_per_row + word_idx;
     
-    if (value) {
-        data[idx] |= mask;
-    } else {
-        data[idx] &= ~mask;
-    }
+    volatile device atomic_uint* atomic_ptr = &data[row * words_per_row + word_idx];
+    
+    // FIX: The mask's type MUST be uint64_t to match the atomic's base type.
+    // Use the 'ULL' suffix for an unsigned long long literal.
+    uint64_t mask = 1ULL << bit_idx;
+    
+    // This will now compile correctly as all types match what the compiler expects.
+    atomic_fetch_or_explicit(atomic_ptr, mask, memory_order_relaxed);
 }
 
-// Main multiplication kernel
-gf2_multiply_kernel(
+// Main multiplication kernel (thread-per-element)
+kernel void gf2_multiply_kernel(
     device const uint64_t* a [[buffer(0)]],
     device const uint64_t* b [[buffer(1)]],
-    device uint64_t* result [[buffer(2)]],
+    // FIX: The result buffer must use the 'atomic_uint' type.
+    volatile device atomic_uint* result [[buffer(2)]],
     constant GF2Params& params [[buffer(3)]],
     uint2 gid [[thread_position_in_grid]]) {
     
@@ -60,11 +65,17 @@ gf2_multiply_kernel(
         sum ^= (a_bit & b_bit);
     }
     
-    set_bit(result, row, col, sum, params.words_per_row_result);
+    if (sum) {
+        set_bit_atomic(result, row, col, params.words_per_row_result);
+    }
 }
 
-// Optimized kernel for 64-bit aligned data
-kernel void gf2_multiply_aligned(
+// --- FIX ENDS HERE ---
+
+
+// Optimized function for 64-bit aligned data (thread-per-word)
+// This function is already correct and uses uint64_t.
+void gf2_multiply_aligned(
     device const uint64_t* a [[buffer(0)]],
     device const uint64_t* b [[buffer(1)]],
     device uint64_t* result [[buffer(2)]],
@@ -81,12 +92,10 @@ kernel void gf2_multiply_aligned(
     uint64_t word_result = 0;
     uint start_col = word_col * 64;
     
-    // Process 64 columns simultaneously
     for (uint bit_idx = 0; bit_idx < 64 && start_col + bit_idx < params.b_cols; bit_idx++) {
         uint col = start_col + bit_idx;
         uint sum = 0;
         
-        // Compute dot product for this column bit
         for (uint k = 0; k < params.a_cols; k++) {
             uint a_bit = get_bit(a, row, k, params.words_per_row_a);
             uint b_bit = get_bit(b, k, col, params.words_per_row_b);
@@ -115,7 +124,6 @@ kernel void gf2_multiply_batch(
     
     if (batch_idx >= 1) return; // For now, single batch
     
-    // Call aligned multiplication
     gf2_multiply_aligned(a, b, result, params, uint2(row, word_col));
 }
 
