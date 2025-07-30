@@ -45,19 +45,20 @@ std::vector<TestResult> GF2TestFramework::runTests(const TestConfig& config) {
         GF2Matrix a = generateRandomMatrix(rowsA, colsA);
         GF2Matrix b = generateRandomMatrix(rowsB, colsB);
         
-        if (config.run_serial) {
-            auto result = testSerial(a, b, config.iterations);
-            allResults.push_back(result);
+        // Skip serial multiplication for matrices 1024 and above
+        if (config.run_serial && (rowsA < 1024 && colsA < 1024 && rowsB < 1024 && colsB < 1024)) {
+            auto results = testSerial(a, b, config.iterations);
+            allResults.insert(allResults.end(), results.begin(), results.end());
         }
         
         if (config.run_simd) {
-            auto result = testSIMD(a, b, config.iterations);
-            allResults.push_back(result);
+            auto results = testSIMD(a, b, config.iterations);
+            allResults.insert(allResults.end(), results.begin(), results.end());
         }
         
         if (config.run_gpu && _gpu) {
-            auto result = testGPU(a, b, config.iterations);
-            allResults.push_back(result);
+            auto results = testGPU(a, b, config.iterations);
+            allResults.insert(allResults.end(), results.begin(), results.end());
         }
         
         std::cout << "\n";
@@ -66,85 +67,296 @@ std::vector<TestResult> GF2TestFramework::runTests(const TestConfig& config) {
     return allResults;
 }
 
-TestResult GF2TestFramework::testSerial(const GF2Matrix& a, const GF2Matrix& b, int iterations) {
-    auto start = std::chrono::high_resolution_clock::now();
-    
-    bool correct = true;
-    GF2Matrix result(a.rows(), b.cols());
-    
-    for (int i = 0; i < iterations; i++) {
-        result = a.multiplySerial(b);
+std::vector<TestResult> GF2TestFramework::testSerial(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode) {
+    if (a.cols() != b.rows()) {
+        throw std::runtime_error("Matrix dimensions incompatible for multiplication");
     }
     
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> duration = end - start;
-    
-    double throughput = calculateThroughput(a.rows(), a.cols(), b.cols(), duration.count() / iterations);
-    
-    return {
-        "Serial",
-        duration.count() / iterations,
-        correct,
-        throughput,
-        a.rows() * b.cols()
-    };
-}
-
-TestResult GF2TestFramework::testSIMD(const GF2Matrix& a, const GF2Matrix& b, int iterations) {
-    auto start = std::chrono::high_resolution_clock::now();
-    
-    bool correct = true;
+    // Pre-allocate result matrix
     GF2Matrix result(a.rows(), b.cols());
     
+    // Warm up with one multiplication
+    GF2Matrix a_warm = generateRandomMatrix(a.rows(), a.cols());
+    GF2Matrix b_warm = generateRandomMatrix(b.rows(), b.cols());
+    result = a_warm.multiplySerial(b_warm);
+    
+    std::vector<TestResult> individual_results;
+    
     for (int i = 0; i < iterations; i++) {
-        result = a.multiplySIMD(b);
+        // Generate new random matrices for each iteration
+        GF2Matrix a_new = generateRandomMatrix(a.rows(), a.cols());
+        GF2Matrix b_new = generateRandomMatrix(b.rows(), b.cols());
+        
+        auto start = std::chrono::high_resolution_clock::now();
+        result = a_new.multiplySerial(b_new);
+        auto end = std::chrono::high_resolution_clock::now();
+        
+        std::chrono::duration<double, std::milli> duration = end - start;
+        double throughput = calculateThroughput(a.rows(), a.cols(), b.cols(), duration.count());
+
+        if (debug_mode) {
+            std::cout << "  Serial multiplication " << (i + 1) << "/" << iterations 
+                      << " completed: " << a.rows() << "x" << a.cols() << " * " 
+                      << b.rows() << "x" << b.cols()
+                      << " in " << duration.count() << " ms"
+                      << " and " << throughput << " GB/s"
+        << "\n";
+        }
+        
+        
+        individual_results.push_back({
+            "Serial",
+            duration.count(),
+            true,
+            throughput,
+            a.rows() * b.cols()
+        });
     }
-    
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> duration = end - start;
-    
-    double throughput = calculateThroughput(a.rows(), a.cols(), b.cols(), duration.count() / iterations);
-    
-    return {
-        "SIMD",
-        duration.count() / iterations,
-        correct,
-        throughput,
-        a.rows() * b.cols()
-    };
+  return individual_results;
 }
 
-TestResult GF2TestFramework::testGPU(const GF2Matrix& a, const GF2Matrix& b, int iterations) {
+std::vector<TestResult> GF2TestFramework::testSIMD(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode) {
+    if (a.cols() != b.rows()) {
+        throw std::runtime_error("Matrix dimensions incompatible for multiplication");
+    }
+    
+    // Pre-allocate result matrix
+    GF2Matrix result(a.rows(), b.cols());
+    
+    // Warm up with one multiplication
+    GF2Matrix a_warm = generateRandomMatrix(a.rows(), a.cols());
+    GF2Matrix b_warm = generateRandomMatrix(b.rows(), b.cols());
+    result = a_warm.multiplySIMD(b_warm);
+    
+    std::vector<TestResult> individual_results;
+    
+    for (int i = 0; i < iterations; i++) {
+        // Generate new random matrices for each iteration
+        GF2Matrix a_new = generateRandomMatrix(a.rows(), a.cols());
+        GF2Matrix b_new = generateRandomMatrix(b.rows(), b.cols());
+        
+        auto start = std::chrono::high_resolution_clock::now();
+        result = a_new.multiplySIMD(b_new);
+        auto end = std::chrono::high_resolution_clock::now();
+        
+        std::chrono::duration<double, std::milli> duration = end - start;
+        double throughput = calculateThroughput(a.rows(), a.cols(), b.cols(), duration.count());
+
+        if (debug_mode) {
+            std::cout << "  SIMD multiplication " << (i + 1) << "/" << iterations 
+                      << " completed: " << a.rows() << "x" << a.cols() << " * " 
+                      << b.rows() << "x" << b.cols() 
+                      << " in " << duration.count() << " ms"
+                      << " and " << throughput << " GB/s"
+        << "\n";
+        }
+        
+        
+        individual_results.push_back({
+            "SIMD",
+            duration.count(),
+            true,
+            throughput,
+            a.rows() * b.cols()
+        });
+    }
+    
+    return individual_results;
+}
+
+// std::vector<TestResult> GF2TestFramework::testSIMD(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode) {
+//     if (a.cols() != b.rows()) {
+//         throw std::runtime_error("Matrix dimensions incompatible for multiplication");
+//     }
+//     
+//     // Pre-allocate result matrix
+//     GF2Matrix result(a.rows(), b.cols());
+//     
+//     // Warm up with one multiplication
+//     GF2Matrix a_warm = generateRandomMatrix(a.rows(), a.cols());
+//     GF2Matrix b_warm = generateRandomMatrix(b.rows(), b.cols());
+//     result = a_warm.multiplySIMD(b_warm);
+//     
+//     std::vector<TestResult> individual_results;
+//     
+//     for (int i = 0; i < iterations; i++) {
+//         // Generate new random matrices for each iteration
+//         GF2Matrix a_new = generateRandomMatrix(a.rows(), a.cols());
+//         GF2Matrix b_new = generateRandomMatrix(b.rows(), b.cols());
+//         
+//         auto start = std::chrono::high_resolution_clock::now();
+//         result = a_new.multiplySIMD(b_new);
+//         auto end = std::chrono::high_resolution_clock::now();
+//         
+//         if (debug_mode) {
+//             std::cout << "  SIMD multiplication " << (i + 1) << "/" << iterations 
+//                       << " completed: " << a.rows() << "x" << a.cols() << " * " 
+//                       << b.rows() << "x" << b.cols() << "\n";
+//         }
+//         
+//         std::chrono::duration<double, std::milli> duration = end - start;
+//         double throughput = calculateThroughput(a.rows(), a.cols(), b.cols(), duration.count());
+//         
+//         individual_results.push_back({
+//             "SIMD",
+//             duration.count(),
+//             true,
+//             throughput,
+//             a.rows() * b.cols()
+//         });
+//     }
+//     
+//     return individual_results;
+// }
+
+std::vector<TestResult> GF2TestFramework::testGPU(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode) {
     if (!_gpu) {
-        return {"GPU", 0.0, false, 0.0, a.rows() * b.cols()};
+        return std::vector<TestResult>{{"GPU", 0.0, false, 0.0, a.rows() * b.cols()}};
     }
     
-    auto start = std::chrono::high_resolution_clock::now();
-    
-    bool correct = true;
+    // Pre-allocate result matrix
     GF2Matrix result(a.rows(), b.cols());
     
+    // Warm up with one multiplication
+    GF2Matrix a_warm = generateRandomMatrix(a.rows(), a.cols());
+    GF2Matrix b_warm = generateRandomMatrix(b.rows(), b.cols());
+    _gpu->multiplyGPU(a_warm, b_warm, result);
+    
+    std::vector<TestResult> individual_results;
+    
     for (int i = 0; i < iterations; i++) {
-        _gpu->multiplyGPU(a, b, result);
+        // Generate new random matrices for each iteration
+        GF2Matrix a_new = generateRandomMatrix(a.rows(), a.cols());
+        GF2Matrix b_new = generateRandomMatrix(b.rows(), b.cols());
+        
+        auto start = std::chrono::high_resolution_clock::now();
+        _gpu->multiplyGPU(a_new, b_new, result);
+        auto end = std::chrono::high_resolution_clock::now();
+        
+        std::chrono::duration<double, std::milli> duration = end - start;
+        double throughput = calculateThroughput(a.rows(), a.cols(), b.cols(), duration.count());
+
+        if (debug_mode) {
+            std::cout << "  GPU multiplication " << (i + 1) << "/" << iterations 
+                      << " completed: " << a.rows() << "x" << a.cols() << " * " 
+                      << b.rows() << "x" << b.cols() 
+                      << " in " << duration.count() << " ms"
+                      << " and " << throughput << " GB/s"
+        << "\n";
+        }
+        
+        
+        individual_results.push_back({
+            "GPU",
+            duration.count(),
+            true,
+            throughput,
+            a.rows() * b.cols()
+        });
     }
     
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> duration = end - start;
-    
-    double throughput = calculateThroughput(a.rows(), a.cols(), b.cols(), duration.count() / iterations);
-    
-    return {
-        "GPU",
-        duration.count() / iterations,
-        correct,
-        throughput,
-        a.rows() * b.cols()
-    };
+    return individual_results;
 }
+
+// std::vector<TestResult> GF2TestFramework::testSIMD(const GF2Matrix& a, const GF2Matrix& b, int iterations) {
+//     if (a.cols() != b.rows()) {
+//         throw std::runtime_error("Matrix dimensions incompatible for multiplication");
+//     }
+//     
+//     // Pre-allocate result matrix
+//     GF2Matrix result(a.rows(), b.cols());
+//     
+//     // Debug mode flag
+//     const bool debug_mode = true;
+//     
+//     // Warm up with one multiplication
+//     GF2Matrix a_warm = generateRandomMatrix(a.rows(), a.cols());
+//     GF2Matrix b_warm = generateRandomMatrix(b.rows(), b.cols());
+//     result = a_warm.multiplySIMD(b_warm);
+//     
+//     std::vector<TestResult> individual_results;
+//     
+//     for (int i = 0; i < iterations; i++) {
+//         // Generate new random matrices for each iteration
+//         GF2Matrix a_new = generateRandomMatrix(a.rows(), a.cols());
+//         GF2Matrix b_new = generateRandomMatrix(b.rows(), b.cols());
+//         
+//         auto start = std::chrono::high_resolution_clock::now();
+//         result = a_new.multiplySIMD(b_new);
+//         auto end = std::chrono::high_resolution_clock::now();
+//         
+//         if (debug_mode) {
+//             std::cout << "  SIMD multiplication " << (i + 1) << "/" << iterations 
+//                       << " completed: " << a.rows() << "x" << a.cols() << " * " 
+//                       << b.rows() << "x" << b.cols() << "\n";
+//         }
+//         
+//         std::chrono::duration<double, std::milli> duration = end - start;
+//         double throughput = calculateThroughput(a.rows(), a.cols(), b.cols(), duration.count());
+//         
+//         individual_results.push_back({
+//             "SIMD",
+//             duration.count(),
+//             true,
+//             throughput,
+//             a.rows() * b.cols()
+//         });
+//     }
+//     
+//     return individual_results;
+// }
+
+// std::vector<TestResult> GF2TestFramework::testGPU(const GF2Matrix& a, const GF2Matrix& b, int iterations) {
+//     if (!_gpu) {
+//         return std::vector<TestResult>{{"GPU", 0.0, false, 0.0, a.rows() * b.cols()}};
+//     }
+//     
+//     // Pre-allocate result matrix
+//     GF2Matrix result(a.rows(), b.cols());
+//     
+//     // Debug mode flag
+//     const bool debug_mode = true;
+//     
+//     // Warm up with one multiplication
+//     GF2Matrix a_warm = generateRandomMatrix(a.rows(), a.cols());
+//     GF2Matrix b_warm = generateRandomMatrix(b.rows(), b.cols());
+//     _gpu->multiplyGPU(a_warm, b_warm, result);
+//     
+//     std::vector<TestResult> individual_results;
+//     
+//     for (int i = 0; i < iterations; i++) {
+//         // Generate new random matrices for each iteration
+//         GF2Matrix a_new = generateRandomMatrix(a.rows(), a.cols());
+//         GF2Matrix b_new = generateRandomMatrix(b.rows(), b.cols());
+//         
+//         auto start = std::chrono::high_resolution_clock::now();
+//         _gpu->multiplyGPU(a_new, b_new, result);
+//         auto end = std::chrono::high_resolution_clock::now();
+//         
+//         if (debug_mode) {
+//             std::cout << "  GPU multiplication " << (i + 1) << "/" << iterations 
+//                       << " completed: " << a.rows() << "x" << a.cols() << " * " 
+//                       << b.rows() << "x" << b.cols() << "\n";
+//         }
+//         
+//         std::chrono::duration<double, std::milli> duration = end - start;
+//         double throughput = calculateThroughput(a.rows(), a.cols(), b.cols(), duration.count());
+//         
+//         individual_results.push_back({
+//             "GPU",
+//             duration.count(),
+//             true,
+//             throughput,
+//             a.rows() * b.cols()
+//         });
+//     }
+//     
+//     return individual_results;
+// }
 
 double GF2TestFramework::calculateThroughput(size_t a_rows, size_t a_cols, size_t b_cols, double duration_ms) {
-    // Calculate bit operations per second
-    // For GF(2) matrix multiplication: a_rows * a_cols * b_cols operations
+    // Calculate bit operations per second using n³ formula
+    // For square matrices: a_rows * a_cols * b_cols = n * n * n
     double operations = static_cast<double>(a_rows * a_cols * b_cols);
     double seconds = duration_ms / 1000.0;
     double gops = operations / seconds / 1e9; // Giga-operations per second

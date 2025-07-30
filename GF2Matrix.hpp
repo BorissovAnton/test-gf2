@@ -12,6 +12,8 @@ public:
     // Accessors
     size_t rows() const { return m_rows; }
     size_t cols() const { return m_cols; }
+    size_t words_per_row() const { return m_words_per_row; }
+    const uint64_t* get_raw_data() const { return m_data.data(); }
     
     // Get/set bit at position (row, col)
     bool get(size_t row, size_t col) const;
@@ -25,6 +27,9 @@ public:
     
     // Matrix multiplication (SIMD implementation)
     GF2Matrix multiplySIMD(const GF2Matrix& other) const;
+
+    // Transpose the matrix
+    GF2Matrix transpose() const;
     
     // Matrix comparison
     bool operator==(const GF2Matrix& other) const;
@@ -35,15 +40,12 @@ public:
 private:
     size_t m_rows;
     size_t m_cols;
+    size_t m_words_per_row;
     std::vector<uint64_t> m_data;
-    
-    // Helper methods
-    size_t dataIndex(size_t row, size_t col) const;
-    size_t bitIndex(size_t row, size_t col) const;
     
     // Internal multiplication helpers
     static uint64_t popcnt64(uint64_t x);
-    static uint64_t parity64(uint64_t x);
+    static uint64_t parity64(uint64_t x); // This function is not used in the provided code, but kept for completeness if it was intended.
 };
 
 // GPU kernel interface

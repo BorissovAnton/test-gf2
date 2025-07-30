@@ -2,6 +2,7 @@
 #include <iostream>
 #include <chrono>
 #include <cassert>
+#include <cstring> // For memcpy
 
 GF2GPU::GF2GPU(MTL::Device* device) : _device(device) {
     setupPipeline();
@@ -56,26 +57,18 @@ void GF2GPU::multiplyGPU(const GF2Matrix& a, const GF2Matrix& b, GF2Matrix& resu
     }
     
     // Calculate buffer sizes
-    size_t words_per_row_a = (a.cols() + 63) / 64;
-    size_t words_per_row_b = (b.cols() + 63) / 64;
-    size_t words_per_row_result = (result.cols() + 63) / 64;
+    size_t words_per_row_a = a.words_per_row();
+    size_t words_per_row_b = b.words_per_row();
+    size_t words_per_row_result = result.words_per_row();
     
     size_t buffer_size_a = a.rows() * words_per_row_a * sizeof(uint64_t);
     size_t buffer_size_b = b.rows() * words_per_row_b * sizeof(uint64_t);
     size_t buffer_size_result = result.rows() * words_per_row_result * sizeof(uint64_t);
     
     // Create GPU buffers
-    auto* bufferA = _device->newBuffer(buffer_size_a, MTL::ResourceStorageModeShared);
-    auto* bufferB = _device->newBuffer(buffer_size_b, MTL::ResourceStorageModeShared);
-    auto* bufferResult = _device->newBuffer(buffer_size_result, MTL::ResourceStorageModeShared);
-    
-    // Fill buffers with data
-    uint64_t* a_data = static_cast<uint64_t*>(bufferA->contents());
-    uint64_t* b_data = static_cast<uint64_t*>(bufferB->contents());
-    
-    // Copy data to GPU buffers (simplified for now)
-    memset(a_data, 0, buffer_size_a);
-    memset(b_data, 0, buffer_size_b);
+    auto* bufferA = _device->newBuffer(a.get_raw_data(), buffer_size_a, MTL::ResourceStorageModeShared);
+    auto* bufferB = _device->newBuffer(b.get_raw_data(), buffer_size_b, MTL::ResourceStorageModeShared);
+    auto* bufferResult = _device->newBuffer(buffer_size_result, MTL::ResourceStorageModeShared); // Result buffer starts empty
     
     // Set up parameters
     GPUParams params;
@@ -117,8 +110,9 @@ void GF2GPU::multiplyGPU(const GF2Matrix& a, const GF2Matrix& b, GF2Matrix& resu
     commandBuffer->commit();
     commandBuffer->waitUntilCompleted();
     
-    // Copy result back (simplified)
-    // In real implementation, we'd parse the GPU result into the GF2Matrix
+    // Copy result from GPU buffer back to the result matrix object
+    void* result_gpu_ptr = bufferResult->contents();
+    memcpy(const_cast<uint64_t*>(result.get_raw_data()), result_gpu_ptr, buffer_size_result);
     
     // Cleanup
     bufferA->release();
@@ -153,6 +147,9 @@ bool GF2GPU::validate(const GF2Matrix& a, const GF2Matrix& b) {
     }
 }
 
+// These helper functions are not used in the updated GF2GPU::multiplyGPU
+// as data is now directly copied from GF2Matrix's internal buffer.
+// They might have been intended for a different buffer management strategy.
 MTL::Buffer* GF2GPU::createBuffer(const uint64_t* data, size_t size) {
     auto* buffer = _device->newBuffer(size, MTL::ResourceStorageModeShared);
     if (data) {

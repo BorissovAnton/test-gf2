@@ -43,8 +43,12 @@ if(COMPILER_SUPPORTS_AVX512)
 endif()
 
 # Source files
-set(SOURCES main.cpp GF2Matrix.cpp GF2GPU.cpp GF2TestFramework.cpp
-            GF2MatrixSIMD.cpp)
+set(SOURCES main.cpp GF2Matrix.cpp GF2GPU.cpp GF2TestFramework.cpp)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  list(APPEND SOURCES GF2MatrixSIMD_x86.cpp)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+  list(APPEND SOURCES GF2MatrixSIMD_arm.cpp)
+endif()
 set(HEADERS GF2Matrix.hpp GF2GPU.hpp GF2TestFramework.hpp)
 
 # Metal shader files

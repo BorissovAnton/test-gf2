@@ -33,9 +33,9 @@ public:
     std::vector<TestResult> runTests(const TestConfig& config);
     
     // Individual test methods
-    TestResult testSerial(const GF2Matrix& a, const GF2Matrix& b, int iterations);
-    TestResult testSIMD(const GF2Matrix& a, const GF2Matrix& b, int iterations);
-    TestResult testGPU(const GF2Matrix& a, const GF2Matrix& b, int iterations);
+    std::vector<TestResult> testSerial(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
+    std::vector<TestResult> testSIMD(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
+    std::vector<TestResult> testGPU(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
     
     // Performance reporting
     void printResults(const std::vector<TestResult>& results);
