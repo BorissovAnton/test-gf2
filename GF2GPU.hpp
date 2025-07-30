@@ -19,8 +19,10 @@ public:
     // Tiled GPU-accelerated matrix multiplication
     void multiplyGPUTiled(const GF2Matrix& a, const GF2Matrix& b, GF2Matrix& result);
 
-    // --- NEW: Vectorized version combining transposition and vector types ---
+    // Vectorized version combining transposition and vector types
     void multiplyGPUVectorized(const GF2Matrix& a, const GF2Matrix& b, GF2Matrix& result);
+
+    void multiplyGPUM4R(const GF2Matrix& a, const GF2Matrix& b, GF2Matrix& result);
     
     // Performance profiling
     float benchmark(const GF2Matrix& a, const GF2Matrix& b, int iterations = 10);
@@ -35,6 +37,10 @@ private:
     MTL::ComputePipelineState* _computePipelineTransposed;
     MTL::ComputePipelineState* _computePipelineTiled;
     MTL::ComputePipelineState* _computePipelineVectorized; // <-- ADDED
+
+    MTL::ComputePipelineState* _computePipelineM4R_MakeTable;
+    MTL::ComputePipelineState* _computePipelineM4R_Multiply;
+
 
     // This struct is used by all GPU methods
     struct GPUParams {

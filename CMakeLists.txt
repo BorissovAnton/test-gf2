@@ -60,23 +60,27 @@ if(APPLE AND METAL_SUPPORTED)
                               PROPERTIES LANGUAGE OBJCXX)
 endif()
 
-# --- FIX: COMPILE ALL METAL SHADERS INTO A SINGLE LIBRARY ---
+# --- COMPILE ALL METAL SHADERS INTO A SINGLE LIBRARY ---
 if(APPLE AND METAL_SUPPORTED)
   # This command compiles ALL .metal files into a SINGLE default.metallib file.
   add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/default.metallib
-    # FIX: List all input files first, then a single -o for the output.
+    # List all input files first, then a single -o for the output.
     COMMAND
       xcrun -sdk macosx metal ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply.metal
       ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_transposed.metal
       ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_tiled.metal
-      ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_vectorized.metal -o
+      ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_vectorized.metal
+      # --- NEW: Add the M4R metal file ---
+      ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_m4r.metal -o
       ${CMAKE_CURRENT_BINARY_DIR}/default.metallib
-    # FIX: The dependency list must include all source files.
+    # The dependency list must include all source files.
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply.metal
             ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_transposed.metal
             ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_tiled.metal
             ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_vectorized.metal
+            # --- NEW: Add the M4R metal file dependency ---
+            ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_m4r.metal
     COMMENT "Compiling all Metal shaders into default.metallib")
 
   add_custom_target(MetalLibrary
@@ -84,7 +88,7 @@ if(APPLE AND METAL_SUPPORTED)
 
   add_dependencies(gf2_test MetalLibrary)
 endif()
-# --- END FIX ---
+# --- END ---
 
 # Link libraries
 if(APPLE AND METAL_SUPPORTED)

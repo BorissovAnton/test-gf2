@@ -25,6 +25,7 @@ struct TestConfig {
     bool run_gpu_transposed = true;
     bool run_gpu_tiled = true;
     bool run_gpu_vectorized = true;
+    bool run_gpu_m4r = true;
 };
 
 class GF2TestFramework {
@@ -42,6 +43,8 @@ public:
     std::vector<TestResult> testGPU_transposed(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
     std::vector<TestResult> testGPUTiled(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
     std::vector<TestResult> testGPUVectorized(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
+    // --- NEW: Declaration for M4R test method ---
+    std::vector<TestResult> testGPUM4R(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
 
     
     // Performance reporting
@@ -69,3 +72,4 @@ public:
     void runAccuracyBenchmark();
     void generateReport();
 };
+

@@ -8,7 +8,10 @@
 GF2GPU::GF2GPU(MTL::Device *device)
     : _device(device), _commandQueue(nullptr), _computePipeline(nullptr),
       _computePipelineTransposed(nullptr), _computePipelineTiled(nullptr),
-      _computePipelineVectorized(nullptr) // <-- ADDED
+      _computePipelineVectorized(nullptr),
+      // --- NEW: Initialize M4R pipeline pointers ---
+      _computePipelineM4R_MakeTable(nullptr),
+      _computePipelineM4R_Multiply(nullptr)
 {
   setupPipeline();
 }
@@ -21,7 +24,12 @@ GF2GPU::~GF2GPU() {
   if (_computePipelineTiled)
     _computePipelineTiled->release();
   if (_computePipelineVectorized)
-    _computePipelineVectorized->release(); // <-- ADDED
+    _computePipelineVectorized->release();
+  // --- NEW: Release M4R pipeline states ---
+  if (_computePipelineM4R_MakeTable)
+    _computePipelineM4R_MakeTable->release();
+  if (_computePipelineM4R_Multiply)
+    _computePipelineM4R_Multiply->release();
   if (_commandQueue)
     _commandQueue->release();
 }
@@ -83,7 +91,7 @@ void GF2GPU::setupPipeline() {
               << std::endl;
   }
 
-  // --- NEW: Setup for vectorized kernel ---
+  // --- Setup for vectorized kernel ---
   auto functionNameVectorized = NS::String::string(
       "gf2_multiply_vectorized_batch", NS::ASCIIStringEncoding);
   MTL::Function *kernelFunctionVectorized =
@@ -100,6 +108,37 @@ void GF2GPU::setupPipeline() {
               << std::endl;
   }
 
+  // --- NEW: Setup for M4R kernels ---
+  auto functionNameM4R_Table =
+      NS::String::string("m4r_make_tables_kernel", NS::ASCIIStringEncoding);
+  MTL::Function *kernelFunctionM4R_Table = library->newFunction(functionNameM4R_Table);
+  if (kernelFunctionM4R_Table) {
+    _computePipelineM4R_MakeTable =
+        _device->newComputePipelineState(kernelFunctionM4R_Table, &error);
+    if (!_computePipelineM4R_MakeTable)
+      std::cerr << "Failed to create pipeline for M4R table kernel: "
+                << error->localizedDescription()->utf8String() << std::endl;
+    kernelFunctionM4R_Table->release();
+  } else {
+    std::cerr << "Failed to load kernel function: m4r_make_tables_kernel"
+              << std::endl;
+  }
+
+  auto functionNameM4R_Mul =
+      NS::String::string("m4r_multiply_kernel", NS::ASCIIStringEncoding);
+  MTL::Function *kernelFunctionM4R_Mul = library->newFunction(functionNameM4R_Mul);
+  if (kernelFunctionM4R_Mul) {
+    _computePipelineM4R_Multiply =
+        _device->newComputePipelineState(kernelFunctionM4R_Mul, &error);
+    if (!_computePipelineM4R_Multiply)
+      std::cerr << "Failed to create pipeline for M4R multiply kernel: "
+                << error->localizedDescription()->utf8String() << std::endl;
+    kernelFunctionM4R_Mul->release();
+  } else {
+    std::cerr << "Failed to load kernel function: m4r_multiply_kernel"
+              << std::endl;
+  }
+
   _commandQueue = _device->newCommandQueue();
   if (!_commandQueue) {
     std::cerr << "Failed to create command queue" << std::endl;
@@ -108,7 +147,90 @@ void GF2GPU::setupPipeline() {
   library->release();
 }
 
-// --- NEW: Implementation for the vectorized multiplication method ---
+// --- NEW: Implementation for the M4R multiplication method ---
+void GF2GPU::multiplyGPUM4R(const GF2Matrix &a, const GF2Matrix &b,
+                            GF2Matrix &result) {
+  if (a.cols() != b.rows() || !_computePipelineM4R_MakeTable || !_computePipelineM4R_Multiply) {
+    throw std::runtime_error(
+        "Matrix dimensions incompatible or M4R pipelines not ready.");
+  }
+
+  // --- M4R Constants ---
+  const size_t K_M4R = 8;
+  const size_t TABLE_ROWS = 1 << K_M4R; // 256
+  const size_t CHUNKS_PER_WORD = 64 / K_M4R; // 8
+
+  // --- Buffer and Table Size Calculations ---
+  size_t num_tables = a.words_per_row() * CHUNKS_PER_WORD;
+  size_t table_row_size_words = b.words_per_row();
+  size_t single_table_size_bytes = TABLE_ROWS * table_row_size_words * sizeof(uint64_t);
+  size_t total_table_size_bytes = num_tables * single_table_size_bytes;
+
+  size_t buffer_size_a = a.rows() * a.words_per_row() * sizeof(uint64_t);
+  size_t buffer_size_b = b.rows() * b.words_per_row() * sizeof(uint64_t);
+  size_t buffer_size_result = result.rows() * result.words_per_row() * sizeof(uint64_t);
+
+  // --- Create Metal Buffers ---
+  auto *bufferA = _device->newBuffer(a.get_raw_data(), buffer_size_a, MTL::ResourceStorageModeShared);
+  auto *bufferB = _device->newBuffer(b.get_raw_data(), buffer_size_b, MTL::ResourceStorageModeShared);
+  auto *bufferResult = _device->newBuffer(buffer_size_result, MTL::ResourceStorageModeShared);
+  auto *bufferLookupTables = _device->newBuffer(total_table_size_bytes, MTL::ResourceStorageModeShared);
+
+  GPUParams params;
+  params.a_rows = static_cast<uint32_t>(a.rows());
+  params.a_cols = static_cast<uint32_t>(a.cols());
+  params.b_cols = static_cast<uint32_t>(b.cols());
+  params.words_per_row_a = static_cast<uint32_t>(a.words_per_row());
+  params.words_per_row_b = static_cast<uint32_t>(b.words_per_row());
+  params.words_per_row_result = static_cast<uint32_t>(result.words_per_row());
+
+  auto *paramsBuffer = _device->newBuffer(&params, sizeof(GPUParams), MTL::ResourceStorageModeShared);
+
+  // --- Command Dispatch ---
+  MTL::CommandBuffer *commandBuffer = _commandQueue->commandBuffer();
+
+  // --- Pass 1: Generate Lookup Tables ---
+  MTL::ComputeCommandEncoder *tableEncoder = commandBuffer->computeCommandEncoder();
+  tableEncoder->setComputePipelineState(_computePipelineM4R_MakeTable);
+  tableEncoder->setBuffer(bufferB, 0, 0);
+  tableEncoder->setBuffer(bufferLookupTables, 0, 1);
+  tableEncoder->setBuffer(paramsBuffer, 0, 2);
+
+  MTL::Size tableGridSize = MTL::Size::Make(b.words_per_row(), num_tables, 1);
+  MTL::Size tableGroupSize = MTL::Size::Make(16, 16, 1); // A common, safe threadgroup size
+  tableEncoder->dispatchThreads(tableGridSize, tableGroupSize);
+  tableEncoder->endEncoding();
+
+  // --- Pass 2: Perform Multiplication ---
+  MTL::ComputeCommandEncoder *mulEncoder = commandBuffer->computeCommandEncoder();
+  mulEncoder->setComputePipelineState(_computePipelineM4R_Multiply);
+  mulEncoder->setBuffer(bufferA, 0, 0);
+  mulEncoder->setBuffer(bufferResult, 0, 1);
+  mulEncoder->setBuffer(bufferLookupTables, 0, 2);
+  mulEncoder->setBuffer(paramsBuffer, 0, 3);
+
+  MTL::Size mulGridSize = MTL::Size::Make(a.rows(), result.words_per_row(), 1);
+  MTL::Size mulGroupSize = MTL::Size::Make(16, 16, 1);
+  mulEncoder->dispatchThreads(mulGridSize, mulGroupSize);
+  mulEncoder->endEncoding();
+
+  // --- Finalize ---
+  commandBuffer->commit();
+  commandBuffer->waitUntilCompleted();
+
+  memcpy(const_cast<uint64_t *>(result.get_raw_data()), bufferResult->contents(), buffer_size_result);
+
+  // --- Release Buffers ---
+  bufferA->release();
+  bufferB->release();
+  bufferResult->release();
+  bufferLookupTables->release();
+  paramsBuffer->release();
+}
+
+
+// --- The other multiplication methods remain unchanged ---
+
 void GF2GPU::multiplyGPUVectorized(const GF2Matrix &a, const GF2Matrix &b,
                                    GF2Matrix &result) {
   if (a.cols() != b.rows() || !_computePipelineVectorized) {
@@ -173,8 +295,6 @@ void GF2GPU::multiplyGPUVectorized(const GF2Matrix &a, const GF2Matrix &b,
   bufferResult->release();
   paramsBuffer->release();
 }
-
-// --- The other multiplication methods remain unchanged ---
 
 void GF2GPU::multiplyGPU_transposed(const GF2Matrix &a, const GF2Matrix &b,
                                     GF2Matrix &result) {
@@ -360,3 +480,4 @@ MTL::Buffer *GF2GPU::createBuffer(const uint64_t *data, size_t size) {
 MTL::Buffer *GF2GPU::createResultBuffer(size_t size) {
   return _device->newBuffer(size, MTL::ResourceStorageModeShared);
 }
+
