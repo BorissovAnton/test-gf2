@@ -2,44 +2,52 @@
 #include <iostream>
 #include <chrono>
 #include <cassert>
-#include <cstring> // For memcpy
+#include <cstring>
 
-GF2GPU::GF2GPU(MTL::Device* device) : _device(device) {
+GF2GPU::GF2GPU(MTL::Device* device) : _device(device), _computePipeline(nullptr), _computePipelineTransposed(nullptr), _commandQueue(nullptr) {
     setupPipeline();
 }
 
 GF2GPU::~GF2GPU() {
     if (_computePipeline) _computePipeline->release();
+    if (_computePipelineTransposed) _computePipelineTransposed->release(); // --- NEW ---
     if (_commandQueue) _commandQueue->release();
 }
 
 void GF2GPU::setupPipeline() {
     NS::Error* error = nullptr;
     
-    // Load the shader library
+    // Load the default shader library, which contains ALL .metal files in the project
     MTL::Library* library = _device->newDefaultLibrary();
     if (!library) {
         std::cerr << "Failed to load Metal library" << std::endl;
         return;
     }
     
-    // Load the kernel function
-    // FIX: Load the correct kernel function name
+    // --- Setup for original kernel ---
     auto functionName = NS::String::string("gf2_multiply_batch", NS::ASCIIStringEncoding);
     MTL::Function* kernelFunction = library->newFunction(functionName);
     if (!kernelFunction) {
-        std::cerr << "Failed to load kernel function" << std::endl;
-        library->release();
-        return;
-    }
-    
-    // Create compute pipeline
-    _computePipeline = _device->newComputePipelineState(kernelFunction, &error);
-    if (!_computePipeline) {
-        std::cerr << "Failed to create compute pipeline: " << error->localizedDescription()->utf8String() << std::endl;
+        std::cerr << "Failed to load kernel function: gf2_multiply_batch" << std::endl;
+    } else {
+        _computePipeline = _device->newComputePipelineState(kernelFunction, &error);
+        if (!_computePipeline) {
+            std::cerr << "Failed to create compute pipeline for original kernel: " << error->localizedDescription()->utf8String() << std::endl;
+        }
         kernelFunction->release();
-        library->release();
-        return;
+    }
+
+    // --- NEW: Setup for transposed kernel ---
+    auto functionNameTransposed = NS::String::string("gf2_multiply_transposed_batch", NS::ASCIIStringEncoding);
+    MTL::Function* kernelFunctionTransposed = library->newFunction(functionNameTransposed);
+    if (!kernelFunctionTransposed) {
+        std::cerr << "Failed to load kernel function: gf2_multiply_transposed_batch" << std::endl;
+    } else {
+        _computePipelineTransposed = _device->newComputePipelineState(kernelFunctionTransposed, &error);
+        if (!_computePipelineTransposed) {
+            std::cerr << "Failed to create compute pipeline for transposed kernel: " << error->localizedDescription()->utf8String() << std::endl;
+        }
+        kernelFunctionTransposed->release();
     }
     
     _commandQueue = _device->newCommandQueue();
@@ -47,8 +55,72 @@ void GF2GPU::setupPipeline() {
         std::cerr << "Failed to create command queue" << std::endl;
     }
     
-    kernelFunction->release();
     library->release();
+}
+
+// --- NEW: Implementation for the transposed multiplication method ---
+void GF2GPU::multiplyGPU_transposed(const GF2Matrix& a, const GF2Matrix& b, GF2Matrix& result) {
+    if (a.cols() != b.rows() || !_computePipelineTransposed) {
+        throw std::runtime_error("Matrix dimensions incompatible or transposed pipeline not ready.");
+    }
+
+    // Step 1: Pre-computation - Transpose matrix B on the CPU
+    GF2Matrix b_t = b.transpose();
+
+    // Calculate buffer sizes
+    size_t buffer_size_a = a.rows() * a.words_per_row() * sizeof(uint64_t);
+    // Use the transposed matrix for buffer B
+    size_t buffer_size_b_t = b_t.rows() * b_t.words_per_row() * sizeof(uint64_t);
+    size_t buffer_size_result = result.rows() * result.words_per_row() * sizeof(uint64_t);
+
+    // Create GPU buffers
+    auto* bufferA = _device->newBuffer(a.get_raw_data(), buffer_size_a, MTL::ResourceStorageModeShared);
+    auto* bufferB_T = _device->newBuffer(b_t.get_raw_data(), buffer_size_b_t, MTL::ResourceStorageModeShared);
+    auto* bufferResult = _device->newBuffer(buffer_size_result, MTL::ResourceStorageModeShared);
+
+    // Set up parameters
+    GPUParams params;
+    params.a_rows = static_cast<uint32_t>(a.rows());
+    params.a_cols = static_cast<uint32_t>(a.cols()); // Common dimension K
+    params.b_cols = static_cast<uint32_t>(b.cols());
+    params.words_per_row_a = static_cast<uint32_t>(a.words_per_row());
+    params.words_per_row_b = static_cast<uint32_t>(b_t.words_per_row()); // CRITICAL: Use transposed B's words per row
+    params.words_per_row_result = static_cast<uint32_t>(result.words_per_row());
+
+    auto* paramsBuffer = _device->newBuffer(&params, sizeof(GPUParams), MTL::ResourceStorageModeShared);
+
+    // Create command buffer and encoder
+    MTL::CommandBuffer* commandBuffer = _commandQueue->commandBuffer();
+    MTL::ComputeCommandEncoder* encoder = commandBuffer->computeCommandEncoder();
+
+    // Set the new compute pipeline
+    encoder->setComputePipelineState(_computePipelineTransposed);
+
+    // Set buffers (note bufferB_T is at index 1)
+    encoder->setBuffer(bufferA, 0, 0);
+    encoder->setBuffer(bufferB_T, 0, 1);
+    encoder->setBuffer(bufferResult, 0, 2);
+    encoder->setBuffer(paramsBuffer, 0, 3);
+
+    // Calculate thread group sizes (same logic as before)
+    MTL::Size threadsPerGroup = MTL::Size::Make(16, 16, 1);
+    MTL::Size gridSize = MTL::Size::Make(a.rows(), result.words_per_row(), 1);
+
+    encoder->dispatchThreads(gridSize, threadsPerGroup);
+    encoder->endEncoding();
+
+    // Execute and wait
+    commandBuffer->commit();
+    commandBuffer->waitUntilCompleted();
+
+    // Copy result back
+    memcpy(const_cast<uint64_t*>(result.get_raw_data()), bufferResult->contents(), buffer_size_result);
+
+    // Cleanup
+    bufferA->release();
+    bufferB_T->release();
+    bufferResult->release();
+    paramsBuffer->release();
 }
 
 void GF2GPU::multiplyGPU(const GF2Matrix& a, const GF2Matrix& b, GF2Matrix& result) {

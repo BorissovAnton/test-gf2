@@ -22,6 +22,7 @@ struct TestConfig {
     bool run_serial = true;
     bool run_simd = true;
     bool run_gpu = true;
+    bool run_gpu_transposed = true;
 };
 
 class GF2TestFramework {
@@ -36,6 +37,8 @@ public:
     std::vector<TestResult> testSerial(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
     std::vector<TestResult> testSIMD(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
     std::vector<TestResult> testGPU(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
+    std::vector<TestResult> testGPU_transposed(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
+
     
     // Performance reporting
     void printResults(const std::vector<TestResult>& results);

@@ -74,9 +74,18 @@ if(APPLE AND METAL_SUPPORTED)
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply.metal
     COMMENT "Compiling Metal shader gf2_multiply.metal")
 
+  add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/proposal1.metallib
+    COMMAND
+      xcrun -sdk macosx metal
+      ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_transposed.metal -o
+      ${CMAKE_CURRENT_BINARY_DIR}/proposal1.metallib
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_transposed.metal
+    COMMENT "Compiling Metal shader gf2_multiply_transposed.metal")
   # This target ensures the custom command is run
-  add_custom_target(MetalLibrary
-                    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/default.metallib)
+  add_custom_target(
+    MetalLibrary DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/default.metallib
+                         ${CMAKE_CURRENT_BINARY_DIR}/proposal1.metallib)
 
   # Make the main executable depend on the compiled Metal library
   add_dependencies(gf2_test MetalLibrary)
