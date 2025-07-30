@@ -14,9 +14,17 @@ int main(int argc, char *argv[]) {
   TestConfig config;
 
   // Set test matrix sizes (adjust based on your hardware)
-  config.matrix_sizes = {{64, 64},     {128, 128},   {256, 256},
-                         {512, 512},   {1024, 1024}, {2048, 2048},
-                         {4096, 4096}, {8192, 8192}};
+  config.matrix_sizes = {
+                          {64, 64},     
+                          {128, 128},   
+                          {256, 256},
+                          {512, 512},   
+                          {1024, 1024}, 
+                          {2048, 2048},
+                          {4096, 4096}, 
+                          {8192, 8192},
+                          {16384, 16384}
+  };
 
   // Parse command line arguments
   if (argc > 1) {
