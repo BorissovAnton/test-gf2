@@ -23,7 +23,7 @@ else()
 endif()
 
 # Compiler flags
-set(COMMON_CXX_FLAGS "-Wall -Wextra -O3 -march=native")
+set(COMMON_CXX_FLAGS "-Wall -Wextra -O3 -march=native -ffast-math")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_CXX_FLAGS}")
 set(CMAKE_OBJCXX_FLAGS "${CMAKE_OBJCXX_FLAGS} ${COMMON_CXX_FLAGS}")
 
