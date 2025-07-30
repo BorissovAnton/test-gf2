@@ -23,6 +23,8 @@ struct TestConfig {
     bool run_simd = true;
     bool run_gpu = true;
     bool run_gpu_transposed = true;
+    bool run_gpu_tiled = true;
+    bool run_gpu_vectorized = true;
 };
 
 class GF2TestFramework {
@@ -38,6 +40,8 @@ public:
     std::vector<TestResult> testSIMD(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
     std::vector<TestResult> testGPU(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
     std::vector<TestResult> testGPU_transposed(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
+    std::vector<TestResult> testGPUTiled(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
+    std::vector<TestResult> testGPUVectorized(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode = true);
 
     
     // Performance reporting

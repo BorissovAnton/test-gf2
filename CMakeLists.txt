@@ -51,9 +51,6 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
 endif()
 set(HEADERS GF2Matrix.hpp GF2GPU.hpp GF2TestFramework.hpp)
 
-# Metal shader files
-set(METAL_SOURCES gf2_multiply.metal)
-
 # Create executable
 add_executable(gf2_test ${SOURCES} ${HEADERS})
 
@@ -66,23 +63,25 @@ endif()
 # --- FIX: COMPILE ALL METAL SHADERS INTO A SINGLE LIBRARY ---
 if(APPLE AND METAL_SUPPORTED)
   # This command compiles ALL .metal files into a SINGLE default.metallib file.
-  # The metal compiler can take multiple source files as input.
   add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/default.metallib
+    # FIX: List all input files first, then a single -o for the output.
     COMMAND
       xcrun -sdk macosx metal ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply.metal
-      ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_transposed.metal -o
+      ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_transposed.metal
+      ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_tiled.metal
+      ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_vectorized.metal -o
       ${CMAKE_CURRENT_BINARY_DIR}/default.metallib
+    # FIX: The dependency list must include all source files.
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply.metal
             ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_transposed.metal
+            ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_tiled.metal
+            ${CMAKE_CURRENT_SOURCE_DIR}/gf2_multiply_vectorized.metal
     COMMENT "Compiling all Metal shaders into default.metallib")
 
-  # This target ensures the custom command is run. It now depends on the single
-  # output file.
   add_custom_target(MetalLibrary
                     DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/default.metallib)
 
-  # Make the main executable depend on the compiled Metal library
   add_dependencies(gf2_test MetalLibrary)
 endif()
 # --- END FIX ---

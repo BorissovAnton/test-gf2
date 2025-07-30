@@ -13,9 +13,14 @@ public:
     // Original GPU-accelerated matrix multiplication (Baseline)
     void multiplyGPU(const GF2Matrix& a, const GF2Matrix& b, GF2Matrix& result);
     
-    // --- NEW ---
     // High-performance version using the transposition strategy
     void multiplyGPU_transposed(const GF2Matrix& a, const GF2Matrix& b, GF2Matrix& result);
+    
+    // Tiled GPU-accelerated matrix multiplication
+    void multiplyGPUTiled(const GF2Matrix& a, const GF2Matrix& b, GF2Matrix& result);
+
+    // --- NEW: Vectorized version combining transposition and vector types ---
+    void multiplyGPUVectorized(const GF2Matrix& a, const GF2Matrix& b, GF2Matrix& result);
     
     // Performance profiling
     float benchmark(const GF2Matrix& a, const GF2Matrix& b, int iterations = 10);
@@ -26,12 +31,12 @@ public:
 private:
     MTL::Device* _device;
     MTL::CommandQueue* _commandQueue;
-    MTL::ComputePipelineState* _computePipeline; // For the original kernel
-    
-    // --- NEW ---
-    MTL::ComputePipelineState* _computePipelineTransposed; // For the new kernel
+    MTL::ComputePipelineState* _computePipeline;
+    MTL::ComputePipelineState* _computePipelineTransposed;
+    MTL::ComputePipelineState* _computePipelineTiled;
+    MTL::ComputePipelineState* _computePipelineVectorized; // <-- ADDED
 
-    // Renamed for clarity, used by both methods
+    // This struct is used by all GPU methods
     struct GPUParams {
         uint32_t a_rows;
         uint32_t a_cols;
@@ -42,7 +47,6 @@ private:
     };
     
     void setupPipeline();
-    // These helpers are fine as they are
     MTL::Buffer* createBuffer(const uint64_t* data, size_t size);
     MTL::Buffer* createResultBuffer(size_t size);
 };

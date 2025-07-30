@@ -66,6 +66,17 @@ std::vector<TestResult> GF2TestFramework::runTests(const TestConfig& config) {
             allResults.insert(allResults.end(), results.begin(), results.end());
         }
 
+        if (config.run_gpu_tiled && _gpu) {
+            auto results = testGPUTiled(a, b, config.iterations);
+            allResults.insert(allResults.end(), results.begin(), results.end());
+        }
+
+        if (config.run_gpu_vectorized && _gpu) {
+            auto results = testGPUVectorized(a, b, config.iterations);
+            allResults.insert(allResults.end(), results.begin(), results.end());
+        }
+
+
         
         std::cout << "\n";
     }
@@ -309,6 +320,100 @@ std::vector<TestResult> GF2TestFramework::testGPU_transposed(const GF2Matrix& a,
     
     return individual_results;
 }
+
+std::vector<TestResult> GF2TestFramework::testGPUTiled(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode) {
+    if (!_gpu) {
+        return std::vector<TestResult>{{"GPU-Tiled", 0.0, false, 0.0, a.rows() * b.cols()}};
+    }
+    
+    GF2Matrix result(a.rows(), b.cols());
+    
+    // Warm up
+    GF2Matrix a_warm = generateRandomMatrix(a.rows(), a.cols());
+    GF2Matrix b_warm = generateRandomMatrix(b.rows(), b.cols());
+    _gpu->multiplyGPUTiled(a_warm, b_warm, result);
+    
+    std::vector<TestResult> individual_results;
+    
+    for (int i = 0; i < iterations; i++) {
+        GF2Matrix a_new = generateRandomMatrix(a.rows(), a.cols());
+        GF2Matrix b_new = generateRandomMatrix(b.rows(), b.cols());
+        
+        auto start = std::chrono::high_resolution_clock::now();
+        _gpu->multiplyGPUTiled(a_new, b_new, result); // Call the new tiled method
+        auto end = std::chrono::high_resolution_clock::now();
+        
+        std::chrono::duration<double, std::milli> duration = end - start;
+        double throughput = calculateThroughput(a.rows(), a.cols(), b.cols(), duration.count());
+
+        if (debug_mode) {
+            std::cout << "  GPU-Tiled multiplication " << (i + 1) << "/" << iterations 
+                      << " completed: " << a.rows() << "x" << a.cols() << " * " 
+                      << b.rows() << "x" << b.cols() 
+                      << " in " << duration.count() << " ms"
+                      << " and " << throughput << " GB/s"
+                      << "\n";
+        }
+        
+        individual_results.push_back({
+            "GPU-Tiled", // Set the correct method name for reporting
+            duration.count(),
+            true, // Assuming correctness for benchmark
+            throughput,
+            a.rows() * b.cols()
+        });
+    }
+    
+    return individual_results;
+}
+
+std::vector<TestResult> GF2TestFramework::testGPUVectorized(const GF2Matrix& a, const GF2Matrix& b, int iterations, bool debug_mode) {
+    if (!_gpu) {
+        return std::vector<TestResult>{{"GPU-Vectorized", 0.0, false, 0.0, a.rows() * b.cols()}};
+    }
+    
+    GF2Matrix result(a.rows(), b.cols());
+    
+    // Warm up
+    GF2Matrix a_warm = generateRandomMatrix(a.rows(), a.cols());
+    GF2Matrix b_warm = generateRandomMatrix(b.rows(), b.cols());
+    _gpu->multiplyGPUVectorized(a_warm, b_warm, result);
+    
+    std::vector<TestResult> individual_results;
+    
+    for (int i = 0; i < iterations; i++) {
+        GF2Matrix a_new = generateRandomMatrix(a.rows(), a.cols());
+        GF2Matrix b_new = generateRandomMatrix(b.rows(), b.cols());
+        
+        auto start = std::chrono::high_resolution_clock::now();
+        _gpu->multiplyGPUVectorized(a_new, b_new, result); // Call the new vectorized method
+        auto end = std::chrono::high_resolution_clock::now();
+        
+        std::chrono::duration<double, std::milli> duration = end - start;
+        double throughput = calculateThroughput(a.rows(), a.cols(), b.cols(), duration.count());
+
+        if (debug_mode) {
+            std::cout << "  GPU-Vectorized multiplication " << (i + 1) << "/" << iterations 
+                      << " completed: " << a.rows() << "x" << a.cols() << " * " 
+                      << b.rows() << "x" << b.cols() 
+                      << " in " << duration.count() << " ms"
+                      << " and " << throughput << " GOps/s"
+                      << "\n";
+        }
+        
+        individual_results.push_back({
+            "GPU-Vectorized", // Method name for reports
+            duration.count(),
+            true, // Assuming correctness for benchmark
+            throughput,
+            a.rows() * b.cols()
+        });
+    }
+    
+    return individual_results;
+}
+
+
 
 
 // std::vector<TestResult> GF2TestFramework::testSIMD(const GF2Matrix& a, const GF2Matrix& b, int iterations) {
