@@ -2,9 +2,6 @@
 
 A comprehensive test suite for comparing serial, SIMD, and GPU implementations of GF(2) (Galois Field of two elements) matrix multiplication.
 
-Figure:
-![GF(2) Matrix Multiplication](https://github.com/anton-k/test-gf2/latex/fig1.png)
-
 ## Overview
 
 This project provides three implementations of matrix multiplication over GF(2):
