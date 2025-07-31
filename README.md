@@ -2,9 +2,13 @@
 
 A comprehensive test suite for comparing serial, SIMD, and GPU implementations of GF(2) (Galois Field of two elements) matrix multiplication.
 
+Figure:
+![GF(2) Matrix Multiplication](https://github.com/anton-k/test-gf2/latex/fig1.png)
+
 ## Overview
 
 This project provides three implementations of matrix multiplication over GF(2):
+
 - **Serial**: Standard nested loop implementation
 - **SIMD**: Vectorized implementation using AVX2/AVX-512
 - **GPU**: Metal-accelerated implementation for Apple GPUs
@@ -20,11 +24,13 @@ This project provides three implementations of matrix multiplication over GF(2):
 ## Building
 
 ### Prerequisites
+
 - macOS with Xcode command line tools
 - CMake 3.16 or higher
 - Metal support (for GPU tests)
 
 ### Build Instructions
+
 ```bash
 mkdir build && cd build
 cmake ../test-gf2
@@ -32,6 +38,7 @@ make -j$(sysctl -n hw.ncpu)
 ```
 
 ### Running Tests
+
 ```bash
 ./gf2_test                    # Run with default settings
 ./gf2_test 256 10             # Test 256x256 matrices with 10 iterations
@@ -48,6 +55,7 @@ make -j$(sysctl -n hw.ncpu)
 4. **Performance profiling**: Accurate timing and throughput calculation
 
 ### File Structure
+
 ```
 test-gf2/
 ├── GF2Matrix.hpp/.cpp      # Matrix class implementation
@@ -70,9 +78,11 @@ test-gf2/
 ## Testing
 
 ### Default Test Suite
+
 Tests matrix sizes: 64×64, 128×128, 256×256, 512×512, 1024×1024
 
 ### Validation Tests
+
 - Identity matrix multiplication
 - Small matrix accuracy verification
 - Cross-implementation consistency checks
@@ -80,6 +90,7 @@ Tests matrix sizes: 64×64, 128×128, 256×256, 512×512, 1024×1024
 ## Output
 
 Results are saved to `gf2_test_results.csv` with columns:
+
 - Method: Implementation type (Serial/SIMD/GPU)
 - Duration_ms: Average execution time in milliseconds
 - Throughput_GOPS: Giga-operations per second
@@ -93,15 +104,14 @@ Results are saved to `gf2_test_results.csv` with columns:
 
 int main() {
     GF2TestFramework framework;
-    
+
     TestConfig config;
     config.matrix_sizes = {{512, 512}};
     config.iterations = 10;
-    
+
     auto results = framework.runTests(config);
     framework.printResults(results);
-    
+
     return 0;
 }
 ```
-
